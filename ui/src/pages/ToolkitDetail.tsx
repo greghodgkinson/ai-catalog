@@ -79,6 +79,7 @@ export function ToolkitDetail() {
   const hasGit = toolkit.git_branch || toolkit.git_last_commit;
   const tokenTotal = toolkit.token_stats.reduce((a, s) => a + s.call_count, 0);
   const costTotal  = toolkit.token_stats.reduce((a, s) => a + (s.total_cost_usd ?? 0), 0);
+  const statsMap   = new Map(toolkit.token_stats.map((s) => [s.capability_name, s]));
 
   return (
     <div className="max-w-5xl mx-auto px-6 pt-20 pb-16 flex flex-col gap-6">
@@ -216,6 +217,12 @@ export function ToolkitDetail() {
           <div className="flex flex-col gap-3">
             {toolkit.agents.map((ag) => {
               const tools = parseList(ag.tools_used);
+              const st = statsMap.get(ag.name);
+              const dur = st?.avg_duration_ms != null
+                ? st.avg_duration_ms >= 60000
+                  ? `${(st.avg_duration_ms / 60000).toFixed(1)}m`
+                  : `${(st.avg_duration_ms / 1000).toFixed(1)}s`
+                : null;
               return (
                 <div key={ag.id} id={`agent-${ag.id}`}
                   className="flex flex-col gap-2 border border-surface-border/60 rounded-lg p-4">
@@ -223,11 +230,22 @@ export function ToolkitDetail() {
                     <span className="font-mono text-sm text-slate-200 flex items-center gap-2">
                       <Bot size={14} className="text-accent" /> {ag.name}
                     </span>
-                    {ag.model && (
-                      <span className="text-[10px] font-mono text-slate-600 bg-surface px-2 py-0.5 rounded border border-surface-border">
-                        {ag.model}
-                      </span>
-                    )}
+                    <div className="flex items-center gap-2">
+                      {st && (
+                        <span className="flex items-center gap-2 text-[10px] text-slate-500">
+                          <span className="tabular-nums">{st.call_count.toLocaleString()} calls</span>
+                          {st.avg_cost_usd != null && st.avg_cost_usd > 0 && (
+                            <span className="tabular-nums text-slate-600">${st.avg_cost_usd.toFixed(4)} avg</span>
+                          )}
+                          {dur && <span className="tabular-nums text-slate-600">{dur} avg</span>}
+                        </span>
+                      )}
+                      {ag.model && (
+                        <span className="text-[10px] font-mono text-slate-600 bg-surface px-2 py-0.5 rounded border border-surface-border">
+                          {ag.model}
+                        </span>
+                      )}
+                    </div>
                   </div>
                   {ag.description && <p className="text-xs text-slate-500">{ag.description}</p>}
                   {tools.length > 0 && (
@@ -251,27 +269,43 @@ export function ToolkitDetail() {
       {toolkit.tools.length > 0 && (
         <Section title="Tools" count={toolkit.tools.length}>
           <div className="flex flex-col gap-3">
-            {toolkit.tools.map((t) => (
-              <div key={t.id} id={`tool-${t.name}`}
-                className="flex flex-col gap-2 border border-surface-border/60 rounded-lg p-4">
-                <div className="flex items-center gap-2">
-                  <Wrench size={14} className="text-accent shrink-0" />
-                  <span className="font-mono text-sm text-slate-200">{t.name}</span>
-                </div>
-                {t.description && <p className="text-xs text-slate-500">{t.description}</p>}
-                {t.output_description && (
-                  <p className="text-[11px] text-slate-600 italic">{t.output_description}</p>
-                )}
-                {t.input_schema && (
-                  <div className="mt-1">
-                    <span className="text-[10px] font-semibold text-slate-600 uppercase tracking-wider">Input Schema</span>
-                    <pre className="mt-1 text-[10px] text-slate-500 bg-surface border border-surface-border rounded px-3 py-2 overflow-x-auto">
-                      {JSON.stringify(t.input_schema, null, 2)}
-                    </pre>
+            {toolkit.tools.map((t) => {
+              const st = statsMap.get(t.name);
+              const dur = st?.avg_duration_ms != null
+                ? st.avg_duration_ms >= 60000
+                  ? `${(st.avg_duration_ms / 60000).toFixed(1)}m`
+                  : `${(st.avg_duration_ms / 1000).toFixed(1)}s`
+                : null;
+              return (
+                <div key={t.id} id={`tool-${t.name}`}
+                  className="flex flex-col gap-2 border border-surface-border/60 rounded-lg p-4">
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-2">
+                      <Wrench size={14} className="text-accent shrink-0" />
+                      <span className="font-mono text-sm text-slate-200">{t.name}</span>
+                    </div>
+                    {st && (
+                      <span className="flex items-center gap-2 text-[10px] text-slate-500">
+                        <span className="tabular-nums">{st.call_count.toLocaleString()} calls</span>
+                        {dur && <span className="tabular-nums text-slate-600">{dur} avg</span>}
+                      </span>
+                    )}
                   </div>
-                )}
-              </div>
-            ))}
+                  {t.description && <p className="text-xs text-slate-500">{t.description}</p>}
+                  {t.output_description && (
+                    <p className="text-[11px] text-slate-600 italic">{t.output_description}</p>
+                  )}
+                  {t.input_schema && (
+                    <div className="mt-1">
+                      <span className="text-[10px] font-semibold text-slate-600 uppercase tracking-wider">Input Schema</span>
+                      <pre className="mt-1 text-[10px] text-slate-500 bg-surface border border-surface-border rounded px-3 py-2 overflow-x-auto">
+                        {JSON.stringify(t.input_schema, null, 2)}
+                      </pre>
+                    </div>
+                  )}
+                </div>
+              );
+            })}
           </div>
         </Section>
       )}
