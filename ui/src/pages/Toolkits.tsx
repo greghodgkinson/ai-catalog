@@ -19,7 +19,11 @@ function ToolkitCard({ t }: { t: ToolkitSummary }) {
           <span className="text-sm font-semibold text-slate-100 group-hover:text-accent transition-colors line-clamp-1">
             {t.name}
           </span>
-          {t.owner && <span className="text-[10px] text-slate-600">{t.owner}</span>}
+          {(t.owner_name || t.owner) && (
+            <span className="text-[10px] text-slate-600">
+              {t.owner_name || t.owner}
+            </span>
+          )}
         </div>
         <ArrowRight size={14} className="text-slate-600 group-hover:text-accent transition-colors shrink-0 mt-0.5" />
       </div>

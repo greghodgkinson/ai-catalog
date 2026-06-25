@@ -22,4 +22,25 @@ async def init_db():
         schema = f.read()
     async with aiosqlite.connect(DB_PATH, timeout=30) as db:
         await db.executescript(schema)
+        for sql in [
+            "ALTER TABLE token_stats ADD COLUMN total_duration_ms REAL NOT NULL DEFAULT 0",
+            "ALTER TABLE token_stats ADD COLUMN avg_duration_ms REAL",
+            "ALTER TABLE toolkits ADD COLUMN publisher_name TEXT",
+            "ALTER TABLE toolkits ADD COLUMN publisher_email TEXT",
+            "ALTER TABLE toolkits ADD COLUMN owner_name TEXT",
+            "ALTER TABLE toolkits ADD COLUMN owner_email TEXT",
+            """CREATE TABLE IF NOT EXISTS toolkit_pushes (
+                id              TEXT PRIMARY KEY,
+                toolkit_id      TEXT NOT NULL REFERENCES toolkits(id) ON DELETE CASCADE,
+                pushed_at       TEXT NOT NULL,
+                pusher_name     TEXT,
+                pusher_email    TEXT,
+                git_branch      TEXT,
+                git_last_commit TEXT
+            )""",
+        ]:
+            try:
+                await db.execute(sql)
+            except Exception:
+                pass  # column/table already exists
         await db.commit()

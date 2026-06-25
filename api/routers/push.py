@@ -66,6 +66,7 @@ class TokenStatRecord(BaseModel):
     total_input_tokens: int = 0
     total_output_tokens: int = 0
     total_cost_usd: float = 0.0
+    total_duration_ms: float = 0.0
     provider: str | None = None
 
 
@@ -82,6 +83,9 @@ class ToolkitSnapshot(BaseModel):
     agents: list[AgentRecord] = []
     tools: list[ToolRecord] = []
     token_stats: list[TokenStatRecord] = []
+    publisher_name: str | None = None
+    publisher_email: str | None = None
+    claim_ownership: bool = False
 
 
 # ── Push endpoint ─────────────────────────────────────────────────────────────
@@ -101,15 +105,25 @@ async def push_toolkit(
 
     if row:
         tid = row["id"]
+        # Fetch current owner to decide whether to update it
+        async with db.execute("SELECT owner_name, owner_email FROM toolkits WHERE id=?", (tid,)) as ocur:
+            orow = await ocur.fetchone()
+        new_owner_name  = snapshot.publisher_name  if snapshot.claim_ownership else (orow["owner_name"]  if orow else None)
+        new_owner_email = snapshot.publisher_email if snapshot.claim_ownership else (orow["owner_email"] if orow else None)
         await db.execute(
             """UPDATE toolkits
                SET description=?, repo_url=?, owner=?, tags=?,
-                   git_branch=?, git_last_commit=?, git_is_dirty=?, last_published_at=?
+                   git_branch=?, git_last_commit=?, git_is_dirty=?, last_published_at=?,
+                   publisher_name=?, publisher_email=?,
+                   owner_name=?, owner_email=?
                WHERE id=?""",
             (
                 snapshot.description, snapshot.repo_url, snapshot.owner,
                 ",".join(snapshot.tags), snapshot.git_branch, snapshot.git_last_commit,
-                1 if snapshot.git_is_dirty else 0, now, tid,
+                1 if snapshot.git_is_dirty else 0, now,
+                snapshot.publisher_name, snapshot.publisher_email,
+                new_owner_name, new_owner_email,
+                tid,
             ),
         )
     else:
@@ -118,15 +132,30 @@ async def push_toolkit(
             """INSERT INTO toolkits
                (id, name, description, repo_url, owner, tags,
                 git_branch, git_last_commit, git_is_dirty,
-                first_published_at, last_published_at)
-               VALUES (?,?,?,?,?,?,?,?,?,?,?)""",
+                first_published_at, last_published_at,
+                publisher_name, publisher_email,
+                owner_name, owner_email)
+               VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
             (
                 tid, snapshot.name, snapshot.description, snapshot.repo_url,
                 snapshot.owner, ",".join(snapshot.tags),
                 snapshot.git_branch, snapshot.git_last_commit,
                 1 if snapshot.git_is_dirty else 0, now, now,
+                snapshot.publisher_name, snapshot.publisher_email,
+                snapshot.publisher_name, snapshot.publisher_email,
             ),
         )
+
+    # Record this push in the push history
+    await db.execute(
+        """INSERT INTO toolkit_pushes (id, toolkit_id, pushed_at, pusher_name, pusher_email, git_branch, git_last_commit)
+           VALUES (?,?,?,?,?,?,?)""",
+        (
+            str(uuid.uuid4()), tid, now,
+            snapshot.publisher_name, snapshot.publisher_email,
+            snapshot.git_branch, snapshot.git_last_commit,
+        ),
+    )
 
     # Replace assemblies (FK CASCADE removes consumers + personas automatically)
     await db.execute("DELETE FROM assemblies WHERE toolkit_id=?", (tid,))
@@ -186,8 +215,9 @@ async def push_toolkit(
                (id, toolkit_id, capability_name, call_count,
                 total_input_tokens, total_output_tokens, total_cost_usd,
                 avg_input_tokens, avg_output_tokens, avg_cost_usd,
+                total_duration_ms, avg_duration_ms,
                 provider, last_updated_at)
-               VALUES (?,?,?,?,?,?,?,?,?,?,?,?)
+               VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)
                ON CONFLICT(toolkit_id, capability_name) DO UPDATE SET
                    call_count             = call_count + excluded.call_count,
                    total_input_tokens     = total_input_tokens + excluded.total_input_tokens,
@@ -199,6 +229,9 @@ async def push_toolkit(
                                             / (call_count + excluded.call_count),
                    avg_cost_usd           = (total_cost_usd + excluded.total_cost_usd)
                                             / (call_count + excluded.call_count),
+                   total_duration_ms      = total_duration_ms + excluded.total_duration_ms,
+                   avg_duration_ms        = (total_duration_ms + excluded.total_duration_ms)
+                                            / (call_count + excluded.call_count),
                    provider               = excluded.provider,
                    last_updated_at        = excluded.last_updated_at""",
             (
@@ -207,6 +240,8 @@ async def push_toolkit(
                 ts.total_input_tokens / ts.call_count,
                 ts.total_output_tokens / ts.call_count,
                 ts.total_cost_usd / ts.call_count,
+                ts.total_duration_ms,
+                ts.total_duration_ms / ts.call_count if ts.total_duration_ms else None,
                 ts.provider, now,
             ),
         )

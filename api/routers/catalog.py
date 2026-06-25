@@ -78,6 +78,27 @@ async def get_toolkit_spec(tid: str, db: aiosqlite.Connection = Depends(get_db))
     )
 
 
+@router.get("/toolkits/{tid}/pushes")
+async def get_toolkit_pushes(
+    tid: str,
+    limit: int = 50,
+    db: aiosqlite.Connection = Depends(get_db),
+):
+    async with db.execute("SELECT id FROM toolkits WHERE id=?", (tid,)) as cur:
+        if not await cur.fetchone():
+            raise HTTPException(404, "Toolkit not found")
+    async with db.execute(
+        "SELECT COUNT(*) FROM toolkit_pushes WHERE toolkit_id=?", (tid,)
+    ) as cur:
+        total = (await cur.fetchone())[0]
+    async with db.execute(
+        "SELECT * FROM toolkit_pushes WHERE toolkit_id=? ORDER BY pushed_at DESC LIMIT ?",
+        (tid, limit),
+    ) as cur:
+        rows = await cur.fetchall()
+    return {"pushes": [dict(r) for r in rows], "total": total}
+
+
 @router.get("/toolkits/{tid}/token-stats")
 async def get_token_stats(tid: str, db: aiosqlite.Connection = Depends(get_db)):
     async with db.execute("SELECT id FROM toolkits WHERE id=?", (tid,)) as cur:

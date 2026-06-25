@@ -13,7 +13,11 @@ CREATE TABLE IF NOT EXISTS toolkits (
     git_last_commit  TEXT,
     git_is_dirty     INTEGER NOT NULL DEFAULT 0,
     first_published_at TEXT NOT NULL,
-    last_published_at  TEXT NOT NULL
+    last_published_at  TEXT NOT NULL,
+    publisher_name   TEXT,
+    publisher_email  TEXT,
+    owner_name       TEXT,
+    owner_email      TEXT
 );
 
 CREATE TABLE IF NOT EXISTS assemblies (
@@ -62,6 +66,16 @@ CREATE TABLE IF NOT EXISTS tools (
     output_description TEXT
 );
 
+CREATE TABLE IF NOT EXISTS toolkit_pushes (
+    id              TEXT PRIMARY KEY,
+    toolkit_id      TEXT NOT NULL REFERENCES toolkits(id) ON DELETE CASCADE,
+    pushed_at       TEXT NOT NULL,
+    pusher_name     TEXT,
+    pusher_email    TEXT,
+    git_branch      TEXT,
+    git_last_commit TEXT
+);
+
 -- token_stats rows are never replaced on re-push — they accumulate via CAT-3
 CREATE TABLE IF NOT EXISTS token_stats (
     id                  TEXT PRIMARY KEY,
@@ -74,6 +88,8 @@ CREATE TABLE IF NOT EXISTS token_stats (
     avg_input_tokens    REAL,
     avg_output_tokens   REAL,
     avg_cost_usd        REAL,
+    total_duration_ms   REAL    NOT NULL DEFAULT 0,
+    avg_duration_ms     REAL,
     provider            TEXT,
     last_updated_at     TEXT NOT NULL,
     UNIQUE(toolkit_id, capability_name)

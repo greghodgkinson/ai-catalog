@@ -42,6 +42,20 @@ export interface ToolkitSummary {
   consumer_count: number;
   persona_count: number;
   total_calls: number;
+  publisher_name: string | null;
+  publisher_email: string | null;
+  owner_name: string | null;
+  owner_email: string | null;
+}
+
+export interface PushRecord {
+  id: string;
+  toolkit_id: string;
+  pushed_at: string;
+  pusher_name: string | null;
+  pusher_email: string | null;
+  git_branch: string | null;
+  git_last_commit: string | null;
 }
 
 export interface Consumer {
@@ -106,6 +120,7 @@ export interface TokenStat {
   avg_input_tokens: number | null;
   avg_output_tokens: number | null;
   avg_cost_usd: number | null;
+  avg_duration_ms: number | null;
   provider: string | null;
   last_updated_at: string;
 }
@@ -133,6 +148,7 @@ export const api = {
   stats: () => req<Stats>("/stats"),
   toolkits: (q?: string) => req<ToolkitSummary[]>(`/toolkits${q ? `?q=${encodeURIComponent(q)}` : ""}`),
   toolkit: (id: string) => req<ToolkitDetail>(`/toolkits/${id}`),
+  toolkitPushes: (id: string, limit = 50) => req<{ pushes: PushRecord[]; total: number }>(`/toolkits/${id}/pushes?limit=${limit}`),
   spec: (id: string) => fetch(`${base}/toolkits/${id}/spec`),
   consumers: (q?: string, toolkit_id?: string) => {
     const p = new URLSearchParams();

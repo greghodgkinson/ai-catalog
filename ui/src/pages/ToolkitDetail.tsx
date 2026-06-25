@@ -1,10 +1,10 @@
 import { useEffect, useState } from "react";
 import { Link, useParams } from "react-router-dom";
 import {
-  Bot, ChevronDown, ChevronRight, Download, ExternalLink,
-  GitBranch, GitCommitHorizontal, Tag, User, Wrench,
+  Bot, ChevronDown, ChevronRight, Crown, Download, ExternalLink,
+  GitBranch, GitCommitHorizontal, Tag, User, Users, Wrench,
 } from "lucide-react";
-import { api, ToolkitDetail as TDetail, parseTags, parseList } from "../lib/api";
+import { api, ToolkitDetail as TDetail, PushRecord, parseTags, parseList } from "../lib/api";
 import { TagChip } from "../components/TagChip";
 
 function Section({
@@ -37,6 +37,7 @@ export function ToolkitDetail() {
   const [toolkit, setToolkit] = useState<TDetail | null>(null);
   const [loading, setLoading] = useState(true);
   const [err, setErr]         = useState<string | null>(null);
+  const [pushes, setPushes]   = useState<PushRecord[]>([]);
 
   useEffect(() => {
     if (!id) return;
@@ -45,6 +46,7 @@ export function ToolkitDetail() {
       .then(setToolkit)
       .catch((e: Error) => setErr(e.message))
       .finally(() => setLoading(false));
+    api.toolkitPushes(id).then((r) => setPushes(r.pushes)).catch(() => {});
   }, [id]);
 
   const downloadSpec = async () => {
@@ -96,9 +98,12 @@ export function ToolkitDetail() {
         <div className="flex items-start gap-3 justify-between">
           <div className="flex flex-col gap-2">
             <h1 className="text-2xl font-black text-slate-100">{toolkit.name}</h1>
-            {toolkit.owner && (
-              <span className="flex items-center gap-1.5 text-[11px] text-slate-500">
-                <User size={12} /> {toolkit.owner}
+            {(toolkit.owner_name || toolkit.owner) && (
+              <span className="flex items-center gap-1.5 text-[11px] text-slate-400">
+                <Crown size={12} className="text-gold" />
+                {toolkit.owner_name
+                  ? `${toolkit.owner_name}${toolkit.owner_email ? ` <${toolkit.owner_email}>` : ""}`
+                  : toolkit.owner}
               </span>
             )}
           </div>
@@ -147,10 +152,19 @@ export function ToolkitDetail() {
           </div>
         )}
 
-        <div className="flex gap-4 text-[11px] text-slate-500 pt-1">
+        <div className="flex flex-wrap gap-4 text-[11px] text-slate-500 pt-1">
           <span>First published {new Date(toolkit.first_published_at).toLocaleString()}</span>
           <span className="text-slate-600">·</span>
           <span>Updated {new Date(toolkit.last_published_at).toLocaleString()}</span>
+          {toolkit.publisher_name && (
+            <>
+              <span className="text-slate-600">·</span>
+              <span className="flex items-center gap-1">
+                <User size={11} /> {toolkit.publisher_name}
+                {toolkit.publisher_email && <span className="text-slate-600">&lt;{toolkit.publisher_email}&gt;</span>}
+              </span>
+            </>
+          )}
         </div>
       </div>
 
@@ -262,6 +276,36 @@ export function ToolkitDetail() {
         </Section>
       )}
 
+      {/* Contributors */}
+      {pushes.length > 0 && (() => {
+        // De-dupe by pusher_email (or name if no email), keep only most-recent push per person
+        const seen = new Map<string, PushRecord>();
+        pushes.forEach((p) => {
+          const key = p.pusher_email || p.pusher_name || p.id;
+          if (!seen.has(key)) seen.set(key, p);
+        });
+        const contributors = [...seen.values()];
+        if (contributors.length <= 1) return null;
+        return (
+          <Section title="Contributors" count={contributors.length}>
+            <div className="flex flex-col gap-2">
+              {contributors.map((p) => (
+                <div key={p.id} className="flex items-center justify-between text-[11px] px-3 py-2 border border-surface-border/60 rounded-lg">
+                  <span className="flex items-center gap-2 text-slate-300">
+                    <Users size={12} className="text-slate-500 shrink-0" />
+                    {p.pusher_name || p.pusher_email || "Unknown"}
+                    {p.pusher_name && p.pusher_email && (
+                      <span className="text-slate-600">&lt;{p.pusher_email}&gt;</span>
+                    )}
+                  </span>
+                  <span className="text-slate-600">{new Date(p.pushed_at).toLocaleDateString()}</span>
+                </div>
+              ))}
+            </div>
+          </Section>
+        );
+      })()}
+
       {/* Token stats */}
       {toolkit.token_stats.length > 0 && (
         <Section title="Token Usage" count={toolkit.token_stats.length}>
@@ -275,6 +319,7 @@ export function ToolkitDetail() {
                     <th className="text-right py-2 pr-4 text-[10px] font-semibold text-slate-600 uppercase tracking-wider">Avg Input</th>
                     <th className="text-right py-2 pr-4 text-[10px] font-semibold text-slate-600 uppercase tracking-wider">Avg Output</th>
                     <th className="text-right py-2 pr-4 text-[10px] font-semibold text-slate-600 uppercase tracking-wider">Avg Cost</th>
+                    <th className="text-right py-2 pr-4 text-[10px] font-semibold text-slate-600 uppercase tracking-wider">Avg Response</th>
                     <th className="text-right py-2 text-[10px] font-semibold text-slate-600 uppercase tracking-wider">Provider</th>
                   </tr>
                 </thead>
@@ -291,6 +336,13 @@ export function ToolkitDetail() {
                       </td>
                       <td className="py-2.5 pr-4 text-right tabular-nums text-slate-500">
                         {s.avg_cost_usd != null ? `$${s.avg_cost_usd.toFixed(5)}` : "—"}
+                      </td>
+                      <td className="py-2.5 pr-4 text-right tabular-nums text-slate-500">
+                        {s.avg_duration_ms != null
+                          ? s.avg_duration_ms >= 60000
+                            ? `${(s.avg_duration_ms / 60000).toFixed(1)}m`
+                            : `${(s.avg_duration_ms / 1000).toFixed(1)}s`
+                          : "—"}
                       </td>
                       <td className="py-2.5 text-right text-slate-600 text-[10px]">{s.provider ?? "—"}</td>
                     </tr>
