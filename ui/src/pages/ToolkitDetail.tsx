@@ -324,29 +324,38 @@ export function ToolkitDetail() {
                   </tr>
                 </thead>
                 <tbody>
-                  {toolkit.token_stats.map((s) => (
-                    <tr key={s.id} className="border-b border-surface-border/40 hover:bg-surface-hover/30 transition-colors">
-                      <td className="py-2.5 pr-4 font-mono text-slate-300">{s.capability_name}</td>
-                      <td className="py-2.5 pr-4 text-right tabular-nums text-slate-300">{s.call_count.toLocaleString()}</td>
-                      <td className="py-2.5 pr-4 text-right tabular-nums text-slate-500">
-                        {s.avg_input_tokens ? Math.round(s.avg_input_tokens).toLocaleString() : "—"}
-                      </td>
-                      <td className="py-2.5 pr-4 text-right tabular-nums text-slate-500">
-                        {s.avg_output_tokens ? Math.round(s.avg_output_tokens).toLocaleString() : "—"}
-                      </td>
-                      <td className="py-2.5 pr-4 text-right tabular-nums text-slate-500">
-                        {s.avg_cost_usd != null ? `$${s.avg_cost_usd.toFixed(5)}` : "—"}
-                      </td>
-                      <td className="py-2.5 pr-4 text-right tabular-nums text-slate-500">
-                        {s.avg_duration_ms != null
-                          ? s.avg_duration_ms >= 60000
-                            ? `${(s.avg_duration_ms / 60000).toFixed(1)}m`
-                            : `${(s.avg_duration_ms / 1000).toFixed(1)}s`
-                          : "—"}
-                      </td>
-                      <td className="py-2.5 text-right text-slate-600 text-[10px]">{s.provider ?? "—"}</td>
-                    </tr>
-                  ))}
+                  {toolkit.token_stats.map((s) => {
+                    const isTool = s.capability_type === "tool";
+                    const dur = s.avg_duration_ms != null
+                      ? s.avg_duration_ms >= 60000
+                        ? `${(s.avg_duration_ms / 60000).toFixed(1)}m`
+                        : `${(s.avg_duration_ms / 1000).toFixed(1)}s`
+                      : "—";
+                    return (
+                      <tr key={s.id} className="border-b border-surface-border/40 hover:bg-surface-hover/30 transition-colors">
+                        <td className="py-2.5 pr-4 font-mono text-slate-300">
+                          <span className="flex items-center gap-1.5">
+                            {isTool
+                              ? <Wrench size={11} className="text-slate-500 shrink-0" />
+                              : <Bot size={11} className="text-accent shrink-0" />}
+                            {s.capability_name}
+                          </span>
+                        </td>
+                        <td className="py-2.5 pr-4 text-right tabular-nums text-slate-300">{s.call_count.toLocaleString()}</td>
+                        <td className="py-2.5 pr-4 text-right tabular-nums text-slate-500">
+                          {isTool ? <span className="text-slate-700">—</span> : (s.avg_input_tokens != null ? Math.round(s.avg_input_tokens).toLocaleString() : "—")}
+                        </td>
+                        <td className="py-2.5 pr-4 text-right tabular-nums text-slate-500">
+                          {isTool ? <span className="text-slate-700">—</span> : (s.avg_output_tokens != null ? Math.round(s.avg_output_tokens).toLocaleString() : "—")}
+                        </td>
+                        <td className="py-2.5 pr-4 text-right tabular-nums text-slate-500">
+                          {isTool ? <span className="text-slate-700">—</span> : (s.avg_cost_usd != null ? `$${s.avg_cost_usd.toFixed(5)}` : "—")}
+                        </td>
+                        <td className="py-2.5 pr-4 text-right tabular-nums text-slate-500">{dur}</td>
+                        <td className="py-2.5 text-right text-slate-600 text-[10px]">{isTool ? <span className="text-slate-700">—</span> : (s.provider ?? "—")}</td>
+                      </tr>
+                    );
+                  })}
                 </tbody>
               </table>
             </div>

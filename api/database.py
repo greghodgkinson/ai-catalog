@@ -25,6 +25,7 @@ async def init_db():
         for sql in [
             "ALTER TABLE token_stats ADD COLUMN total_duration_ms REAL NOT NULL DEFAULT 0",
             "ALTER TABLE token_stats ADD COLUMN avg_duration_ms REAL",
+            "ALTER TABLE token_stats ADD COLUMN capability_type TEXT",
             "ALTER TABLE toolkits ADD COLUMN publisher_name TEXT",
             "ALTER TABLE toolkits ADD COLUMN publisher_email TEXT",
             "ALTER TABLE toolkits ADD COLUMN owner_name TEXT",

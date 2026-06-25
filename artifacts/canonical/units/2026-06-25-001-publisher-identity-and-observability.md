@@ -174,7 +174,7 @@ Token cost data and average LLM response time should flow from the workbench int
 ### CAT-8: Session stats visible end-to-end in AI Catalog
 
 **Type:** ux
-**Status:** proposed
+**Status:** in-progress
 **Epic:** Token Stats & Round-Trip Time Observability
 **Repo:** `ai-catalog`
 
@@ -183,15 +183,44 @@ Token cost data and average LLM response time should flow from the workbench int
 **so that** I can compare performance and cost across toolkit capabilities.
 
 **Acceptance Criteria:**
-- [ ] Workbench checkbox is labelled "Include session stats (tokens + duration)" — not "Include token stats"
-- [ ] Re-push at least one toolkit with "Include session stats" checked
-- [ ] Catalog toolkit detail page shows a populated Token Usage section with at least one capability row
-- [ ] Each row shows: Calls, Avg Input, Avg Output, Avg Cost, Avg Response, Provider
-- [ ] `Avg Response` column shows a value (e.g. `4.2s`) — not "—" — confirming `avg_duration_ms` is flowing through
-- [ ] The six tracked fields are documented in a comment in `toolkit-workbench/api/routers/catalog.py` above `collect_token_stats`
+- [x] Workbench checkbox is labelled "Include session stats (tokens + duration)" — not "Include token stats"
+- [x] `collect_token_stats` in the workbench also collects sessions where `prompt_tokens IS NULL` (tool calls), tagged `capability_type: "tool"`; agent sessions are tagged `capability_type: "agent"`
+- [x] Catalog `token_stats` table gains a `capability_type TEXT` column; push endpoint stores and preserves it
+- [x] Catalog Token Usage table: **agent rows** always show Avg Input, Avg Output, Avg Cost, and Avg Response when data is present
+- [x] Catalog Token Usage table: **tool rows** show Avg Response (duration); token columns show "—" since tools have no LLM calls
+- [x] Token Usage table uses a small Bot/Wrench icon in the Capability column to distinguish agents from tools
+- [ ] Re-push at least one toolkit with "Include session stats" checked and verify both agent and tool rows appear
+- [ ] `Avg Response` column shows a real value (e.g. `4.2s`) — not "—" — confirming `avg_duration_ms` is flowing through
 
 **Notes:**
 - Manual verification step — requires running the workbench and pushing with session stats enabled
-- If "Avg Response" shows "—" after a push, check that `finished_at` is being set on sessions in the workbench DB (sessions abandoned mid-run have no `finished_at` and contribute 0 duration)
+- Tool sessions are identified by `prompt_tokens IS NULL` in the workbench sessions table; they won't have token counts but do have `started_at` / `finished_at` for duration
+- If "Avg Response" shows "—" after a push, check that `finished_at` is being set on sessions in the workbench DB
+
+---
+
+### CAT-9: Incremental session stats push
+
+**Type:** backend
+**Status:** done
+**Epic:** Token Stats & Round-Trip Time Observability
+**Repo:** `toolkit-workbench`
+
+**As a** toolkit author pushing regularly,
+**I want** the workbench to only include sessions since my last stats push — not re-send every session every time,
+**so that** the catalog accumulates correctly without duplicate counting and pushes are fast even with a large session history.
+
+**Acceptance Criteria:**
+- [x] Workbench `toolkits` table gains `catalog_last_stats_push_at TEXT` column (migration safe on existing DBs)
+- [x] `collect_token_stats` accepts a `since: str | None` parameter; when set, filters both agent and tool session queries with `AND started_at > ?`
+- [x] `catalog_push` endpoint looks up `catalog_last_stats_push_at` before collecting stats and passes it as `since`
+- [x] After a successful push with `include_token_stats=True`, `catalog_last_stats_push_at` is stamped to the push timestamp
+- [x] `catalog_preview` returns `new_sessions` (count since last push) and `last_stats_push_at`; `costed_sessions` is aliased to `new_sessions` for backwards compatibility
+- [x] CatalogTab checkbox label reads "Include session stats (X **new** sessions since [date])" when a prior stats push exists; first push shows just the total count
+
+**Notes:**
+- Each workbench has its own `catalog_last_stats_push_at` per toolkit — multiple publishers each only push their own new sessions, and the catalog accumulates all of them correctly
+- If `catalog_last_stats_push_at` is null (never pushed stats), all historical sessions are included — same behaviour as before this story
+- The timestamp is only updated when stats are explicitly included (`include_token_stats=True`) — a metadata-only push does not advance the cursor
 
 ---

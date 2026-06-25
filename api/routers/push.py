@@ -68,6 +68,7 @@ class TokenStatRecord(BaseModel):
     total_cost_usd: float = 0.0
     total_duration_ms: float = 0.0
     provider: str | None = None
+    capability_type: str | None = None  # "agent" or "tool"
 
 
 class ToolkitSnapshot(BaseModel):
@@ -216,8 +217,8 @@ async def push_toolkit(
                 total_input_tokens, total_output_tokens, total_cost_usd,
                 avg_input_tokens, avg_output_tokens, avg_cost_usd,
                 total_duration_ms, avg_duration_ms,
-                provider, last_updated_at)
-               VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+                provider, capability_type, last_updated_at)
+               VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
                ON CONFLICT(toolkit_id, capability_name) DO UPDATE SET
                    call_count             = call_count + excluded.call_count,
                    total_input_tokens     = total_input_tokens + excluded.total_input_tokens,
@@ -233,6 +234,7 @@ async def push_toolkit(
                    avg_duration_ms        = (total_duration_ms + excluded.total_duration_ms)
                                             / (call_count + excluded.call_count),
                    provider               = excluded.provider,
+                   capability_type        = excluded.capability_type,
                    last_updated_at        = excluded.last_updated_at""",
             (
                 str(uuid.uuid4()), tid, ts.capability_name, ts.call_count,
@@ -242,7 +244,7 @@ async def push_toolkit(
                 ts.total_cost_usd / ts.call_count,
                 ts.total_duration_ms,
                 ts.total_duration_ms / ts.call_count if ts.total_duration_ms else None,
-                ts.provider, now,
+                ts.provider, ts.capability_type, now,
             ),
         )
 

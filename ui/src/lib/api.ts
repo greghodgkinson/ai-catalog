@@ -122,6 +122,7 @@ export interface TokenStat {
   avg_cost_usd: number | null;
   avg_duration_ms: number | null;
   provider: string | null;
+  capability_type: string | null;
   last_updated_at: string;
 }
 

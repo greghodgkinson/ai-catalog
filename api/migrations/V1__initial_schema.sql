@@ -91,6 +91,7 @@ CREATE TABLE IF NOT EXISTS token_stats (
     total_duration_ms   REAL    NOT NULL DEFAULT 0,
     avg_duration_ms     REAL,
     provider            TEXT,
+    capability_type     TEXT,
     last_updated_at     TEXT NOT NULL,
     UNIQUE(toolkit_id, capability_name)
 );
