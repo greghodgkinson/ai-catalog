@@ -171,23 +171,27 @@ Token cost data and average LLM response time should flow from the workbench int
 
 ---
 
-### CAT-8: Verify and document token stats end-to-end flow
+### CAT-8: Session stats visible end-to-end in AI Catalog
 
-**Type:** reference
+**Type:** ux
 **Status:** proposed
 **Epic:** Token Stats & Round-Trip Time Observability
 **Repo:** `ai-catalog`
 
 **As a** toolkit maintainer,
-**I want** to know exactly which fields are tracked and how they get from the workbench into the catalog,
-**so that** I can confidently re-push toolkits to see their stats.
+**I want** to see session stats (call counts, token usage, cost, and average response time) populated in the catalog after pushing,
+**so that** I can compare performance and cost across toolkit capabilities.
 
 **Acceptance Criteria:**
-- [ ] After deploying CAT-7, re-push at least one toolkit (e.g. AI SDLC Toolkit) with "Include token stats" checked
-- [ ] Catalog UI shows populated `call_count`, `total_input_tokens`, `total_output_tokens`, `total_cost_usd`, and `avg_duration_ms` for at least one capability
+- [ ] Workbench checkbox is labelled "Include session stats (tokens + duration)" — not "Include token stats"
+- [ ] Re-push at least one toolkit with "Include session stats" checked
+- [ ] Catalog toolkit detail page shows a populated Token Usage section with at least one capability row
+- [ ] Each row shows: Calls, Avg Input, Avg Output, Avg Cost, Avg Response, Provider
+- [ ] `Avg Response` column shows a value (e.g. `4.2s`) — not "—" — confirming `avg_duration_ms` is flowing through
 - [ ] The six tracked fields are documented in a comment in `toolkit-workbench/api/routers/catalog.py` above `collect_token_stats`
 
 **Notes:**
-- Manual verification step — requires running the workbench and pushing with token stats enabled
+- Manual verification step — requires running the workbench and pushing with session stats enabled
+- If "Avg Response" shows "—" after a push, check that `finished_at` is being set on sessions in the workbench DB (sessions abandoned mid-run have no `finished_at` and contribute 0 duration)
 
 ---
