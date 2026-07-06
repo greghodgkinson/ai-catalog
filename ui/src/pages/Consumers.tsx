@@ -97,7 +97,12 @@ export function Consumers() {
             <tbody>
               {filteredConsumers.map((c) => (
                 <tr key={c.id} className="border-b border-surface-border/30 hover:bg-surface-raised/50 transition-colors">
-                  <td className="py-3 pr-4 text-slate-200 font-medium">{c.name}</td>
+                  <td className="py-3 pr-4">
+                    <Link to={`/consumers/${c.id}`}
+                      className="text-slate-200 font-medium hover:text-accent transition-colors">
+                      {c.name}
+                    </Link>
+                  </td>
                   <td className="py-3 pr-4">
                     <Link to={`/toolkits/${c.toolkit_id}`}
                       className="text-accent hover:text-accent-hover transition-colors">

@@ -27,7 +27,9 @@ CREATE TABLE IF NOT EXISTS assemblies (
     description  TEXT,
     gateway_port INTEGER,
     raw_yaml     TEXT,
-    published_at TEXT NOT NULL
+    published_at TEXT NOT NULL,
+    version      TEXT,
+    base_url     TEXT
 );
 
 CREATE TABLE IF NOT EXISTS consumers (
@@ -48,13 +50,18 @@ CREATE TABLE IF NOT EXISTS personas (
 );
 
 CREATE TABLE IF NOT EXISTS agents (
-    id          TEXT PRIMARY KEY,
-    toolkit_id  TEXT NOT NULL REFERENCES toolkits(id) ON DELETE CASCADE,
-    name        TEXT NOT NULL,
-    description TEXT,
-    tools_used  TEXT,
-    llm_class   TEXT,
-    model       TEXT
+    id             TEXT PRIMARY KEY,
+    toolkit_id     TEXT NOT NULL REFERENCES toolkits(id) ON DELETE CASCADE,
+    name           TEXT NOT NULL,
+    description    TEXT,
+    tools_used     TEXT,
+    llm_class      TEXT,
+    model          TEXT,
+    orchestrator   INTEGER,
+    session_history INTEGER,
+    guardrails     INTEGER,
+    observability  INTEGER,
+    max_tokens     INTEGER
 );
 
 CREATE TABLE IF NOT EXISTS tools (
@@ -74,6 +81,41 @@ CREATE TABLE IF NOT EXISTS toolkit_pushes (
     pusher_email    TEXT,
     git_branch      TEXT,
     git_last_commit TEXT
+);
+
+CREATE TABLE IF NOT EXISTS bindings (
+    id              TEXT PRIMARY KEY,
+    assembly_id     TEXT NOT NULL REFERENCES assemblies(id) ON DELETE CASCADE,
+    capability_name TEXT NOT NULL,
+    description     TEXT,
+    agent_name      TEXT
+);
+
+CREATE TABLE IF NOT EXISTS consumer_persona (
+    consumer_id TEXT NOT NULL REFERENCES consumers(id) ON DELETE CASCADE,
+    persona_id  TEXT NOT NULL REFERENCES personas(id) ON DELETE CASCADE,
+    PRIMARY KEY (consumer_id, persona_id)
+);
+
+CREATE TABLE IF NOT EXISTS persona_capability (
+    persona_id      TEXT NOT NULL REFERENCES personas(id) ON DELETE CASCADE,
+    capability_name TEXT NOT NULL,
+    PRIMARY KEY (persona_id, capability_name)
+);
+
+CREATE TABLE IF NOT EXISTS assembly_dependency (
+    id          TEXT PRIMARY KEY,
+    assembly_id TEXT NOT NULL REFERENCES assemblies(id) ON DELETE CASCADE,
+    name        TEXT NOT NULL,
+    url         TEXT,
+    required    INTEGER NOT NULL DEFAULT 0,
+    description TEXT
+);
+
+CREATE TABLE IF NOT EXISTS agent_tool (
+    agent_id TEXT NOT NULL REFERENCES agents(id) ON DELETE CASCADE,
+    tool_id  TEXT NOT NULL REFERENCES tools(id) ON DELETE CASCADE,
+    PRIMARY KEY (agent_id, tool_id)
 );
 
 -- token_stats rows are never replaced on re-push — they accumulate via CAT-3

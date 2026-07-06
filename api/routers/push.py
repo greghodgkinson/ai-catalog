@@ -18,6 +18,10 @@ def _check_auth(x_catalog_key: str | None) -> None:
         raise HTTPException(401, "Invalid or missing X-Catalog-Key")
 
 
+def _bool_col(v: bool | None) -> int | None:
+    return None if v is None else (1 if v else 0)
+
+
 # ── Pydantic models ───────────────────────────────────────────────────────────
 
 class ConsumerRecord(BaseModel):
@@ -33,14 +37,43 @@ class PersonaRecord(BaseModel):
     capability_count: int = 0
 
 
+class BindingRecord(BaseModel):
+    capability_name: str
+    description: str | None = None
+    agent_name: str | None = None
+
+
+class DependencyRecord(BaseModel):
+    name: str
+    url: str | None = None
+    required: bool = False
+    description: str | None = None
+
+
+class ConsumerPersonaGrant(BaseModel):
+    consumer_id: str   # original YAML consumer_id
+    persona_id: str    # original YAML persona_id
+
+
+class PersonaCapabilityRecord(BaseModel):
+    persona_id: str    # original YAML persona_id
+    capability_name: str
+
+
 class AssemblyRecord(BaseModel):
     assembly_id: str
     name: str
     description: str | None = None
     gateway_port: int | None = None
     raw_yaml: str | None = None
+    version: str | None = None
+    base_url: str | None = None
     consumers: list[ConsumerRecord] = []
     personas: list[PersonaRecord] = []
+    bindings: list[BindingRecord] = []
+    dependencies: list[DependencyRecord] = []
+    consumer_persona_grants: list[ConsumerPersonaGrant] = []
+    persona_capabilities: list[PersonaCapabilityRecord] = []
 
 
 class AgentRecord(BaseModel):
@@ -50,6 +83,11 @@ class AgentRecord(BaseModel):
     tools_used: list[str] = []
     llm_class: str | None = None
     model: str | None = None
+    orchestrator: bool | None = None
+    session_history: bool | None = None
+    guardrails: bool | None = None
+    observability: bool | None = None
+    max_tokens: int | None = None
 
 
 class ToolRecord(BaseModel):
@@ -100,13 +138,12 @@ async def push_toolkit(
     _check_auth(x_catalog_key)
     now = datetime.now(timezone.utc).isoformat()
 
-    # Upsert toolkit by name — assembly/agent/tool data always reflects latest push
+    # Upsert toolkit by name
     async with db.execute("SELECT id FROM toolkits WHERE name=?", (snapshot.name,)) as cur:
         row = await cur.fetchone()
 
     if row:
         tid = row["id"]
-        # Fetch current owner to decide whether to update it
         async with db.execute("SELECT owner_name, owner_email FROM toolkits WHERE id=?", (tid,)) as ocur:
             orow = await ocur.fetchone()
         new_owner_name  = snapshot.publisher_name  if snapshot.claim_ownership else (orow["owner_name"]  if orow else None)
@@ -147,67 +184,126 @@ async def push_toolkit(
             ),
         )
 
-    # Record this push in the push history
+    # Push history
     await db.execute(
         """INSERT INTO toolkit_pushes (id, toolkit_id, pushed_at, pusher_name, pusher_email, git_branch, git_last_commit)
            VALUES (?,?,?,?,?,?,?)""",
-        (
-            str(uuid.uuid4()), tid, now,
-            snapshot.publisher_name, snapshot.publisher_email,
-            snapshot.git_branch, snapshot.git_last_commit,
-        ),
+        (str(uuid.uuid4()), tid, now,
+         snapshot.publisher_name, snapshot.publisher_email,
+         snapshot.git_branch, snapshot.git_last_commit),
     )
 
-    # Replace assemblies (FK CASCADE removes consumers + personas automatically)
+    # Replace assemblies (CASCADE removes consumers, personas, bindings, dependencies)
     await db.execute("DELETE FROM assemblies WHERE toolkit_id=?", (tid,))
+
+    # Track YAML IDs → DB UUIDs for junction tables
+    consumer_db_ids: dict[tuple[str, str], str] = {}  # (aid, yaml_consumer_id) → db_uuid
+    persona_db_ids: dict[tuple[str, str], str] = {}   # (aid, yaml_persona_id) → db_uuid
+
     for asm in snapshot.assemblies:
         aid = str(uuid.uuid4())
         await db.execute(
             """INSERT INTO assemblies
-               (id, toolkit_id, name, description, gateway_port, raw_yaml, published_at)
-               VALUES (?,?,?,?,?,?,?)""",
-            (aid, tid, asm.name, asm.description, asm.gateway_port, asm.raw_yaml, now),
+               (id, toolkit_id, name, description, gateway_port, raw_yaml, published_at, version, base_url)
+               VALUES (?,?,?,?,?,?,?,?,?)""",
+            (aid, tid, asm.name, asm.description, asm.gateway_port, asm.raw_yaml, now,
+             asm.version, asm.base_url),
         )
         for c in asm.consumers:
+            cid = str(uuid.uuid4())
+            consumer_db_ids[(aid, c.consumer_id)] = cid
             await db.execute(
                 "INSERT INTO consumers (id, assembly_id, toolkit_id, name, description) VALUES (?,?,?,?,?)",
-                (str(uuid.uuid4()), aid, tid, c.name, c.description),
+                (cid, aid, tid, c.name, c.description),
             )
         for p in asm.personas:
+            pid = str(uuid.uuid4())
+            persona_db_ids[(aid, p.persona_id)] = pid
             await db.execute(
                 """INSERT INTO personas
                    (id, assembly_id, toolkit_id, name, description, capability_count)
                    VALUES (?,?,?,?,?,?)""",
-                (str(uuid.uuid4()), aid, tid, p.name, p.description, p.capability_count),
+                (pid, aid, tid, p.name, p.description, p.capability_count),
             )
+        for b in asm.bindings:
+            await db.execute(
+                "INSERT INTO bindings (id, assembly_id, capability_name, description, agent_name) VALUES (?,?,?,?,?)",
+                (str(uuid.uuid4()), aid, b.capability_name, b.description, b.agent_name),
+            )
+        for dep in asm.dependencies:
+            await db.execute(
+                """INSERT INTO assembly_dependency (id, assembly_id, name, url, required, description)
+                   VALUES (?,?,?,?,?,?)""",
+                (str(uuid.uuid4()), aid, dep.name, dep.url, 1 if dep.required else 0, dep.description),
+            )
+        for grant in asm.consumer_persona_grants:
+            cdb = consumer_db_ids.get((aid, grant.consumer_id))
+            pdb = persona_db_ids.get((aid, grant.persona_id))
+            if cdb and pdb:
+                await db.execute(
+                    "INSERT OR IGNORE INTO consumer_persona (consumer_id, persona_id) VALUES (?,?)",
+                    (cdb, pdb),
+                )
+        for pc in asm.persona_capabilities:
+            pdb = persona_db_ids.get((aid, pc.persona_id))
+            if pdb:
+                await db.execute(
+                    "INSERT OR IGNORE INTO persona_capability (persona_id, capability_name) VALUES (?,?)",
+                    (pdb, pc.capability_name),
+                )
 
-    # Replace agents and tools
+    # Replace agents and tools, tracking IDs for agent_tool junction
     await db.execute("DELETE FROM agents WHERE toolkit_id=?", (tid,))
+    agent_db_ids: dict[str, str] = {}  # agent_name → db_uuid
+
     for ag in snapshot.agents:
+        agid = str(uuid.uuid4())
+        agent_db_ids[ag.name] = agid
         await db.execute(
             """INSERT INTO agents
-               (id, toolkit_id, name, description, tools_used, llm_class, model)
-               VALUES (?,?,?,?,?,?,?)""",
+               (id, toolkit_id, name, description, tools_used, llm_class, model,
+                orchestrator, session_history, guardrails, observability, max_tokens)
+               VALUES (?,?,?,?,?,?,?,?,?,?,?,?)""",
             (
-                str(uuid.uuid4()), tid, ag.name, ag.description,
+                agid, tid, ag.name, ag.description,
                 ",".join(ag.tools_used), ag.llm_class, ag.model,
+                _bool_col(ag.orchestrator), _bool_col(ag.session_history),
+                _bool_col(ag.guardrails), _bool_col(ag.observability),
+                ag.max_tokens,
             ),
         )
 
     await db.execute("DELETE FROM tools WHERE toolkit_id=?", (tid,))
+    tool_db_ids: dict[str, str] = {}  # tool_name → db_uuid
+
     for t in snapshot.tools:
+        tid_tool = str(uuid.uuid4())
+        tool_db_ids[t.name] = tid_tool
         await db.execute(
             """INSERT INTO tools
                (id, toolkit_id, name, description, input_schema, output_description)
                VALUES (?,?,?,?,?,?)""",
             (
-                str(uuid.uuid4()), tid, t.name, t.description,
+                tid_tool, tid, t.name, t.description,
                 json.dumps(t.input_schema) if t.input_schema else None,
                 t.output_description,
             ),
         )
 
-    # Accumulate token stats — never overwrite, always add to running totals
+    # Populate agent_tool junction
+    for ag in snapshot.agents:
+        agid = agent_db_ids.get(ag.name)
+        if not agid:
+            continue
+        for tool_name in ag.tools_used:
+            tool_db_id = tool_db_ids.get(tool_name)
+            if tool_db_id:
+                await db.execute(
+                    "INSERT OR IGNORE INTO agent_tool (agent_id, tool_id) VALUES (?,?)",
+                    (agid, tool_db_id),
+                )
+
+    # Accumulate token stats
     for ts in snapshot.token_stats:
         if ts.call_count <= 0:
             continue

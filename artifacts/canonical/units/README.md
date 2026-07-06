@@ -5,14 +5,15 @@ Each file in this directory represents one unit of catalog work. A unit maps to 
 ## Naming convention
 
 ```
-YYYY-MM-DD-NNN-short-name.md
+YYYY-MM-DD-NNN-short-name[x-y].md
 ```
 
 - `YYYY-MM-DD` — date the unit was created
 - `NNN` — three-digit sequence number within that date (001, 002, …)
 - `short-name` — kebab-case description of the unit
+- `[x/y]` — stories completed out of total stories in the unit (e.g. `[3/5]`); update this as stories reach **done** status
 
-Example: `2026-06-24-001-catalog-ingestion.md`
+Example: `2026-06-24-001-catalog-ingestion[5/5].md`
 
 ---
 
