@@ -127,6 +127,23 @@ class ToolkitSnapshot(BaseModel):
     claim_ownership: bool = False
 
 
+# ── Delete endpoint ───────────────────────────────────────────────────────────
+
+@router.delete("/toolkits/{tid}")
+async def delete_toolkit(
+    tid: str,
+    db: aiosqlite.Connection = Depends(get_db),
+    x_catalog_key: str | None = Header(default=None),
+):
+    _check_auth(x_catalog_key)
+    async with db.execute("SELECT id FROM toolkits WHERE id=?", (tid,)) as cur:
+        if not await cur.fetchone():
+            raise HTTPException(404, "Toolkit not found")
+    await db.execute("DELETE FROM toolkits WHERE id=?", (tid,))
+    await db.commit()
+    return {"status": "ok", "deleted_toolkit_id": tid}
+
+
 # ── Push endpoint ─────────────────────────────────────────────────────────────
 
 @router.post("/push")
