@@ -115,6 +115,7 @@ class ToolkitSnapshot(BaseModel):
     owner: str | None = None
     tags: list[str] = []
     repo_url: str | None = None
+    source_url: str | None = None  # normalised git remote URL — stable across renames and clones
     git_branch: str | None = None
     git_last_commit: str | None = None
     git_is_dirty: bool = False
@@ -155,9 +156,14 @@ async def push_toolkit(
     _check_auth(x_catalog_key)
     now = datetime.now(timezone.utc).isoformat()
 
-    # Upsert toolkit by name
-    async with db.execute("SELECT id FROM toolkits WHERE name=?", (snapshot.name,)) as cur:
-        row = await cur.fetchone()
+    # Upsert toolkit: try source_url (stable across renames) then fall back to name
+    row = None
+    if snapshot.source_url:
+        async with db.execute("SELECT id FROM toolkits WHERE source_url=?", (snapshot.source_url,)) as cur:
+            row = await cur.fetchone()
+    if not row:
+        async with db.execute("SELECT id FROM toolkits WHERE name=?", (snapshot.name,)) as cur:
+            row = await cur.fetchone()
 
     if row:
         tid = row["id"]
@@ -167,14 +173,15 @@ async def push_toolkit(
         new_owner_email = snapshot.publisher_email if snapshot.claim_ownership else (orow["owner_email"] if orow else None)
         await db.execute(
             """UPDATE toolkits
-               SET description=?, repo_url=?, owner=?, tags=?,
+               SET name=?, description=?, repo_url=?, source_url=?, owner=?, tags=?,
                    git_branch=?, git_last_commit=?, git_is_dirty=?, last_published_at=?,
                    publisher_name=?, publisher_email=?,
                    owner_name=?, owner_email=?
                WHERE id=?""",
             (
-                snapshot.description, snapshot.repo_url, snapshot.owner,
-                ",".join(snapshot.tags), snapshot.git_branch, snapshot.git_last_commit,
+                snapshot.name, snapshot.description, snapshot.repo_url, snapshot.source_url,
+                snapshot.owner, ",".join(snapshot.tags),
+                snapshot.git_branch, snapshot.git_last_commit,
                 1 if snapshot.git_is_dirty else 0, now,
                 snapshot.publisher_name, snapshot.publisher_email,
                 new_owner_name, new_owner_email,
@@ -185,14 +192,14 @@ async def push_toolkit(
         tid = str(uuid.uuid4())
         await db.execute(
             """INSERT INTO toolkits
-               (id, name, description, repo_url, owner, tags,
+               (id, name, description, repo_url, source_url, owner, tags,
                 git_branch, git_last_commit, git_is_dirty,
                 first_published_at, last_published_at,
                 publisher_name, publisher_email,
                 owner_name, owner_email)
-               VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+               VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
             (
-                tid, snapshot.name, snapshot.description, snapshot.repo_url,
+                tid, snapshot.name, snapshot.description, snapshot.repo_url, snapshot.source_url,
                 snapshot.owner, ",".join(snapshot.tags),
                 snapshot.git_branch, snapshot.git_last_commit,
                 1 if snapshot.git_is_dirty else 0, now, now,

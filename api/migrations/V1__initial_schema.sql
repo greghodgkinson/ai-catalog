@@ -5,6 +5,7 @@ PRAGMA foreign_keys=ON;
 CREATE TABLE IF NOT EXISTS toolkits (
     id               TEXT PRIMARY KEY,
     name             TEXT NOT NULL UNIQUE,
+    source_url       TEXT UNIQUE,   -- normalised git remote URL — stable across renames and clones
     description      TEXT,
     repo_url         TEXT,
     owner            TEXT,

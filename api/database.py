@@ -30,6 +30,7 @@ async def init_db():
             "ALTER TABLE toolkits ADD COLUMN publisher_email TEXT",
             "ALTER TABLE toolkits ADD COLUMN owner_name TEXT",
             "ALTER TABLE toolkits ADD COLUMN owner_email TEXT",
+            "ALTER TABLE toolkits ADD COLUMN source_url TEXT UNIQUE",
             "ALTER TABLE assemblies ADD COLUMN version TEXT",
             "ALTER TABLE assemblies ADD COLUMN base_url TEXT",
             "ALTER TABLE agents ADD COLUMN orchestrator INTEGER",
