@@ -145,6 +145,38 @@ async def delete_toolkit(
     return {"status": "ok", "deleted_toolkit_id": tid}
 
 
+# ── Owner correction endpoint ──────────────────────────────────────────────────
+# Deliberately separate from /push: that endpoint does a full destructive
+# replace of a toolkit's assemblies/agents/tools on every call (DELETE +
+# re-insert from whatever's in the payload), so it's not safe to use just to
+# correct a wrong owner_name/owner_email — a minimal "fix the owner" payload
+# through it would silently wipe the toolkit's real assembly/agent/tool data.
+# This endpoint touches only the two owner columns, nothing else.
+
+class OwnerCorrection(BaseModel):
+    owner_name: str | None = None
+    owner_email: str | None = None
+
+
+@router.patch("/toolkits/{tid}/owner")
+async def set_toolkit_owner(
+    tid: str,
+    body: OwnerCorrection,
+    db: aiosqlite.Connection = Depends(get_db),
+    x_catalog_key: str | None = Header(default=None),
+):
+    _check_auth(x_catalog_key)
+    async with db.execute("SELECT id FROM toolkits WHERE id=?", (tid,)) as cur:
+        if not await cur.fetchone():
+            raise HTTPException(404, "Toolkit not found")
+    await db.execute(
+        "UPDATE toolkits SET owner_name=?, owner_email=? WHERE id=?",
+        (body.owner_name, body.owner_email, tid),
+    )
+    await db.commit()
+    return {"status": "ok", "toolkit_id": tid, "owner_name": body.owner_name, "owner_email": body.owner_email}
+
+
 # ── Push endpoint ─────────────────────────────────────────────────────────────
 
 @router.post("/push")
@@ -190,6 +222,11 @@ async def push_toolkit(
         )
     else:
         tid = str(uuid.uuid4())
+        # A brand-new toolkit has no prior owner to preserve, but claiming
+        # ownership must still be opt-in here too — mirror the UPDATE
+        # branch's guard instead of unconditionally crowning the pusher.
+        new_owner_name  = snapshot.publisher_name  if snapshot.claim_ownership else None
+        new_owner_email = snapshot.publisher_email if snapshot.claim_ownership else None
         await db.execute(
             """INSERT INTO toolkits
                (id, name, description, repo_url, source_url, owner, tags,
@@ -204,7 +241,7 @@ async def push_toolkit(
                 snapshot.git_branch, snapshot.git_last_commit,
                 1 if snapshot.git_is_dirty else 0, now, now,
                 snapshot.publisher_name, snapshot.publisher_email,
-                snapshot.publisher_name, snapshot.publisher_email,
+                new_owner_name, new_owner_email,
             ),
         )
 
