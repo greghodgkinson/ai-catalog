@@ -145,23 +145,29 @@ async def delete_toolkit(
     return {"status": "ok", "deleted_toolkit_id": tid}
 
 
-# ── Owner correction endpoint ──────────────────────────────────────────────────
+# ── Metadata correction endpoint ────────────────────────────────────────────────
 # Deliberately separate from /push: that endpoint does a full destructive
 # replace of a toolkit's assemblies/agents/tools on every call (DELETE +
 # re-insert from whatever's in the payload), so it's not safe to use just to
-# correct a wrong owner_name/owner_email — a minimal "fix the owner" payload
-# through it would silently wipe the toolkit's real assembly/agent/tool data.
-# This endpoint touches only the two owner columns, nothing else.
+# correct a wrong owner or a missing description — a minimal "just fix this
+# one field" payload through it would silently wipe the toolkit's real
+# assembly/agent/tool data. This endpoint touches only the columns actually
+# present in the request body (exclude_unset — a field simply omitted from
+# the JSON is left untouched, not overwritten with NULL), never anything else.
 
-class OwnerCorrection(BaseModel):
+_METADATA_FIELDS = {"owner_name", "owner_email", "description"}
+
+
+class MetadataCorrection(BaseModel):
     owner_name: str | None = None
     owner_email: str | None = None
+    description: str | None = None
 
 
-@router.patch("/toolkits/{tid}/owner")
-async def set_toolkit_owner(
+@router.patch("/toolkits/{tid}/metadata")
+async def set_toolkit_metadata(
     tid: str,
-    body: OwnerCorrection,
+    body: MetadataCorrection,
     db: aiosqlite.Connection = Depends(get_db),
     x_catalog_key: str | None = Header(default=None),
 ):
@@ -169,12 +175,15 @@ async def set_toolkit_owner(
     async with db.execute("SELECT id FROM toolkits WHERE id=?", (tid,)) as cur:
         if not await cur.fetchone():
             raise HTTPException(404, "Toolkit not found")
-    await db.execute(
-        "UPDATE toolkits SET owner_name=?, owner_email=? WHERE id=?",
-        (body.owner_name, body.owner_email, tid),
-    )
+
+    updates = {k: v for k, v in body.model_dump(exclude_unset=True).items() if k in _METADATA_FIELDS}
+    if not updates:
+        raise HTTPException(400, "No fields to update")
+
+    set_clause = ", ".join(f"{col}=?" for col in updates)
+    await db.execute(f"UPDATE toolkits SET {set_clause} WHERE id=?", (*updates.values(), tid))
     await db.commit()
-    return {"status": "ok", "toolkit_id": tid, "owner_name": body.owner_name, "owner_email": body.owner_email}
+    return {"status": "ok", "toolkit_id": tid, **updates}
 
 
 # ── Push endpoint ─────────────────────────────────────────────────────────────
