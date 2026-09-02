@@ -30,7 +30,11 @@ async def init_db():
             "ALTER TABLE toolkits ADD COLUMN publisher_email TEXT",
             "ALTER TABLE toolkits ADD COLUMN owner_name TEXT",
             "ALTER TABLE toolkits ADD COLUMN owner_email TEXT",
-            "ALTER TABLE toolkits ADD COLUMN source_url TEXT UNIQUE",
+            # SQLite cannot add a column with a UNIQUE constraint via ALTER TABLE.
+            # Add it first, then create the equivalent unique index separately so
+            # existing catalog volumes are migrated as well as fresh databases.
+            "ALTER TABLE toolkits ADD COLUMN source_url TEXT",
+            "CREATE UNIQUE INDEX IF NOT EXISTS idx_toolkits_source_url ON toolkits(source_url)",
             "ALTER TABLE assemblies ADD COLUMN version TEXT",
             "ALTER TABLE assemblies ADD COLUMN base_url TEXT",
             "ALTER TABLE agents ADD COLUMN orchestrator INTEGER",
