@@ -25,3 +25,4 @@ ui/dist/
 # IDE
 .idea/
 .vscode/
+ui/tsconfig.tsbuildinfo
